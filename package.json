@@ -1,0 +1,17 @@
+{
+  "name": "permit-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx http-server -p 5055 -c-1",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@metamask/eth-sig-util": "^6.0.0",
+    "http-server": "^14.1.1"
+  }
+}

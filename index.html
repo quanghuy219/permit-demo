@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permit Demo</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.7.4-rc.1/web3.min.js"></script>
+    <script src="script.js?v=2"></script>
+</head>
+<body>
+    <input id="connect-btn" type="button" value="Connect Wallet" onclick="connect();" />
+    <p id="wallet-address-txt"></p>
+    <input id="sign-btn" type="button" value="Sign message" onclick="signPermitMessage();" />
+    <br/>
+    <br>
+    <input type="button" value="Sign and Permit" onclick="signAndPermit();">
+    <p id="permit-txhash"></p>
+</body>
+</html>
