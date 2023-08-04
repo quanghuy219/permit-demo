@@ -1,19 +1,22 @@
 const targetNetworkId = "0x5";
 const USDC_CONTRACT = "0x07865c6E87B9F70255377e024ace6630C1Eaa37F";
 const SPENDER = "0x62805A97AA27D7173545b1692d54a2DdDC3dE7C2";
+const etherscanLink = "https://eth-goerli.blockscout.com/tx"
+// const etherscanLink = "https://goerli.etherscan.io/tx"
 let walletAddress;
 let usdcAbi;
 let swapAbi;
 
 const tokens = {
     USDC: {
-        name: "USDC",
+        name: "USD Coin",
         decimal: 6,
         address: "0x07865c6E87B9F70255377e024ace6630C1Eaa37F",
         logo: "https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png?1547042389",
         erc20: true,
         isPermitSupported: true,
-        native: false
+        native: false,
+        version: "2"
     },
     ETH: {
         name: "ETH",
@@ -36,15 +39,21 @@ const getBalance = async (token) => {
     try {
         result = await contract.methods.balanceOf(walletAddress).call()
         balance = new BigNumber(result)
-        return balance.dividedBy(BigNumber(10).pow(token.decimal)).toString()
+        return balance.dividedBy(BigNumber(10).pow(token.decimal)).toFormat()
     } catch (err) {
         console.log(err)
     }
 }
 
 const onSourceTokenChange = async (value) => {
+    const sourceToken = tokens[value]
     let balance = await getBalance(tokens[value]);
     document.querySelector('#source-token-balance-label').textContent = `Balance: ${balance}`;
+    if (sourceToken.isPermitSupported) {
+        document.querySelector("#swap-btn").value = "Permit and Swap"
+    } else {
+        document.querySelector("#swap-btn").value = "Swap"
+    }
 }
 
 const onDestTokenChange = async (value) => {
@@ -152,16 +161,15 @@ const getNonce = async () => {
     }
 }
 
-const signPermitMessage = async function() {
+const signPermitMessage = async function(name, version, contract, value, chainId = 5) {
     const domain = {
-        name: "USD Coin",
-        version: "2",
-        chainId: 5,
-        verifyingContract: USDC_CONTRACT
+        name,
+        version,
+        chainId,
+        verifyingContract: contract
     }
     let walletNonce = await getNonce()
     let deadline = Math.floor(new Date().getTime() / 1000) + 1800
-    let value = "10000000000";
     const message = {
         owner: walletAddress,
         spender: SPENDER,
@@ -170,7 +178,7 @@ const signPermitMessage = async function() {
         deadline: deadline
     }
     let typedData = await createEIP2612TypedData(domain, message)
-    console.log(walletAddress);
+
     try {
         const signature = await window.ethereum.request({
             method: 'eth_signTypedData_v4',
@@ -199,8 +207,9 @@ const signPermitMessage = async function() {
 }
 
 const signAndPermit = async () => {
-    let permitMessage = await signPermitMessage();
-    const contract = new window.web3.eth.Contract(usdcAbi, USDC_CONTRACT)
+    const usdc = token.USDC
+    let permitMessage = await signPermitMessage(usdc.name, usdc.version, usdc.address, 1000000000);
+    const contract = new window.web3.eth.Contract(usdcAbi, usdc.address)
 
     let fromAddress = "0x2e7af6aE90E7581c111f52a058d5f5f206bfBBF6";
     contract.methods.permit(
@@ -217,12 +226,46 @@ const signAndPermit = async () => {
     })
 }
 
-const permitAndSwap = async () => {
-    let permitMessage = await signPermitMessage();
+const swap = async () => {
+    let sourceTokenName = document.querySelector("#select-source-token").value
+    let sourceToken = tokens[sourceTokenName]
+    sourceAmount = document.querySelector("#source-token-amount").value
+    sourceAmountWithDecimal = BigNumber(sourceAmount).shiftedBy(sourceToken.decimal)
+
+    let destTokenName = document.querySelector("#select-dest-token").value
+    let destToken = tokens[destTokenName]
+
+    if (sourceToken.isPermitSupported) {
+        permitAndSwap(sourceToken, sourceAmountWithDecimal.toString(), destToken)
+    } else {
+        swapExactETH(sourceToken, sourceAmountWithDecimal.toString(), destToken)
+    }
+}
+
+const swapExactETH = async (sourceToken, sourceAmount, destToken) => {
+    const contract = new window.web3.eth.Contract(swapAbi, SPENDER);
+
+    contract.methods.swapExactInputSingle(
+        [sourceAmount, sourceToken.address, destToken.address, 3000]
+    ).send({from: walletAddress, value: sourceAmount}, function(err, transactionHash) {
+        if (err != null) {
+            console.log(err)
+            alert(err.message)
+        } else {
+            console.log(transactionHash)
+            let resultElement = document.querySelector('#swap-txhash')
+            resultElement.textContent = transactionHash;
+            resultElement.href = `${etherscanLink}/${transactionHash}`
+        }
+    })
+}
+
+const permitAndSwap = async (sourceToken, sourceAmount, destToken) => {
+    let permitMessage = await signPermitMessage(sourceToken.name, sourceToken.version, sourceToken.address, sourceAmount);
     const contract = new window.web3.eth.Contract(swapAbi, SPENDER);
 
     contract.methods.swapExactInputSingleWithPermit(
-        [10000000000, "0x07865c6E87B9F70255377e024ace6630C1Eaa37F", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", 3000],
+        [sourceAmount, sourceToken.address, destToken.address, 3000],
         [permitMessage.owner, permitMessage.spender, permitMessage.value, permitMessage.deadline, permitMessage.v, permitMessage.r, permitMessage.s]
     ).send({from: walletAddress}, function(err, transactionHash) {
         if (err != null) {
@@ -230,7 +273,9 @@ const permitAndSwap = async () => {
             alert(err.message)
         } else {
             console.log(transactionHash)
-            document.querySelector('#swap-txhash').textContent = `Tx Hash: ${transactionHash}`;
+            let resultElement = document.querySelector('#swap-txhash')
+            resultElement.textContent = transactionHash;
+            resultElement.href = `${etherscanLink}/${transactionHash}`
         }
     })
 }
