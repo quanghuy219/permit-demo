@@ -7,6 +7,14 @@ let walletAddress;
 let usdcAbi;
 let swapAbi;
 
+document.addEventListener('DOMContentLoaded', () => {
+    var cleave = new Cleave('.number-input', {
+        numeral: true,
+        numeralThousandsGroupStyle: 'thousand',
+        numeralDecimalScale: 18
+    });
+});
+
 const tokens = {
     USDC: {
         name: "USD Coin",
@@ -27,60 +35,6 @@ const tokens = {
         erc20: false,
         native: true
     }
-}
-
-const getBalance = async (token) => {
-    if (token.native) {
-        balance = await window.web3.eth.getBalance(walletAddress);
-        return window.web3.utils.fromWei(balance)
-    }
-
-    const contract = new window.web3.eth.Contract(usdcAbi, token.address)
-    try {
-        result = await contract.methods.balanceOf(walletAddress).call()
-        balance = new BigNumber(result)
-        return balance.dividedBy(BigNumber(10).pow(token.decimal)).toFormat()
-    } catch (err) {
-        console.log(err)
-    }
-}
-
-const onSourceTokenChange = async (value) => {
-    const sourceToken = tokens[value]
-    let balance = await getBalance(tokens[value]);
-    document.querySelector('#source-token-balance-label').textContent = `Balance: ${balance}`;
-    if (sourceToken.isPermitSupported) {
-        document.querySelector("#swap-btn").value = "Permit and Swap"
-    } else {
-        document.querySelector("#swap-btn").value = "Swap"
-    }
-}
-
-const onDestTokenChange = async (value) => {
-    let balance = await getBalance(tokens[value]);
-    document.querySelector('#dest-token-balance-label').textContent = `Balance: ${balance}`;
-}
-
-async function checkNetwork() {
-    if (window.ethereum) {
-      const currentChainId = await window.ethereum.request({
-        method: 'eth_chainId',
-      });
-
-      // return true if network id is the same
-      if (currentChainId == targetNetworkId) return true;
-      // return false is network id is different
-      return false;
-    }
-}
-
-async function switchNetwork() {
-    await window.ethereum.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: targetNetworkId }],
-    });
-    // refresh
-    window.location.reload();
 }
 
 async function connect() {
@@ -106,6 +60,75 @@ async function connect() {
     } else {
         alert("No wallet");
     }
+}
+
+async function checkNetwork() {
+    if (window.ethereum) {
+      const currentChainId = await window.ethereum.request({
+        method: 'eth_chainId',
+      });
+
+      // return true if network id is the same
+      if (currentChainId == targetNetworkId) return true;
+      // return false is network id is different
+      return false;
+    }
+}
+
+async function switchNetwork() {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: targetNetworkId }],
+    });
+    // refresh
+    window.location.reload();
+}
+
+const getBalance = async (token) => {
+    if (token.native) {
+        balance = await window.web3.eth.getBalance(walletAddress);
+        return window.web3.utils.fromWei(balance)
+    }
+
+    const contract = new window.web3.eth.Contract(usdcAbi, token.address)
+    result = await contract.methods.balanceOf(walletAddress).call()
+    balance = new BigNumber(result)
+    return balance.dividedBy(BigNumber(10).pow(token.decimal)).toFormat()
+}
+
+const onSourceTokenChange = async (value) => {
+    const sourceToken = tokens[value]
+    let balance = await getBalance(tokens[value]);
+    document.querySelector('#source-token-balance-label').textContent = `Balance: ${balance}`;
+    if (sourceToken.isPermitSupported) {
+        document.querySelector("#swap-btn").value = "Permit and Swap"
+    } else {
+        document.querySelector("#swap-btn").value = "Swap"
+    }
+}
+
+const onDestTokenChange = async (value) => {
+    let balance = await getBalance(tokens[value]);
+    document.querySelector('#dest-token-balance-label').textContent = `Balance: ${balance}`;
+}
+
+const switchTokens = async () => {
+    const sourceTokenElement = document.querySelector("#select-source-token")
+    const sourceTokenValue = sourceTokenElement.value
+    const destTokenElement = document.querySelector("#select-dest-token")
+    const destTokenValue = destTokenElement.value
+
+    sourceTokenElement.value = destTokenValue
+    destTokenElement.value = sourceTokenValue
+    await onSourceTokenChange(sourceTokenElement.value)
+    await onDestTokenChange(destTokenElement.value)
+}
+
+const inputMaxAmount = async () => {
+    const sourceToken = document.querySelector("#select-source-token").value
+    const token = tokens[sourceToken]
+    balance = await getBalance(token)
+    document.querySelector("#source-token-amount").value = balance
 }
 
 const EIP712Domain = [
@@ -179,57 +202,58 @@ const signPermitMessage = async function(name, version, contract, value, chainId
     }
     let typedData = await createEIP2612TypedData(domain, message)
 
-    try {
-        const signature = await window.ethereum.request({
-            method: 'eth_signTypedData_v4',
-            params: [
-                walletAddress,
-                typedData
-            ]
-        });
-        console.log(signature)
-        let r = signature.slice(0, 66)
-        let s = '0x' + signature.slice(66, 130)
-        let v = parseInt(signature.slice(130, 132), 16)
-        console.log("r", r, "s", s, "v", v)
-        return {
-            owner: walletAddress,
-            spender: SPENDER,
-            value,
-            deadline,
-            v,
-            r,
-            s,
-        }
-    } catch (err) {
-        console.log(err)
+    const signature = await window.ethereum.request({
+        method: 'eth_signTypedData_v4',
+        params: [
+            walletAddress,
+            typedData
+        ]
+    });
+
+    let r = signature.slice(0, 66)
+    let s = '0x' + signature.slice(66, 130)
+    let v = parseInt(signature.slice(130, 132), 16)
+
+    return {
+        owner: walletAddress,
+        spender: SPENDER,
+        value,
+        deadline,
+        v,
+        r,
+        s,
     }
 }
 
 const signAndPermit = async () => {
-    const usdc = token.USDC
-    let permitMessage = await signPermitMessage(usdc.name, usdc.version, usdc.address, 1000000000);
-    const contract = new window.web3.eth.Contract(usdcAbi, usdc.address)
+    const usdc = tokens.USDC
+    try {
+        let permitMessage = await signPermitMessage(usdc.name, usdc.version, usdc.address, 1000000000);
+        const contract = new window.web3.eth.Contract(usdcAbi, usdc.address)
 
-    let fromAddress = "0x2e7af6aE90E7581c111f52a058d5f5f206bfBBF6";
-    contract.methods.permit(
-        permitMessage.owner, permitMessage.spender, permitMessage.value, permitMessage.deadline,
-        permitMessage.v, permitMessage.r, permitMessage.s)
-    .send({from: fromAddress}, function(err, transactionHash) {
-        if (err != null) {
-            console.log(err)
-            alert(err.message)
-        } else {
-            console.log(transactionHash)
-            document.querySelector('#permit-txhash').textContent = `Tx Hash: ${transactionHash}`;
-        }
-    })
+        contract.methods.permit(
+            permitMessage.owner, permitMessage.spender, permitMessage.value, permitMessage.deadline,
+            permitMessage.v, permitMessage.r, permitMessage.s)
+        .send({from: walletAddress}, function(err, transactionHash) {
+            if (err != null) {
+                console.log(err)
+                alert(err.message)
+            } else {
+                console.log(transactionHash)
+                document.querySelector('#permit-txhash').textContent = `Tx Hash: ${transactionHash}`;
+            }
+        })
+    } catch (err) {
+        console.log(err)
+        alert(err.message)
+    }
 }
 
 const swap = async () => {
     let sourceTokenName = document.querySelector("#select-source-token").value
     let sourceToken = tokens[sourceTokenName]
     sourceAmount = document.querySelector("#source-token-amount").value
+    sourceAmount = parseFloat(sourceAmount.replace(/,/g, ''));
     sourceAmountWithDecimal = BigNumber(sourceAmount).shiftedBy(sourceToken.decimal)
 
     let destTokenName = document.querySelector("#select-dest-token").value
