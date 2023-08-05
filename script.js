@@ -1,8 +1,8 @@
 const targetNetworkId = "0x5";
 const USDC_CONTRACT = "0x07865c6E87B9F70255377e024ace6630C1Eaa37F";
 const SPENDER = "0x62805A97AA27D7173545b1692d54a2DdDC3dE7C2";
-const etherscanLink = "https://eth-goerli.blockscout.com/tx"
-// const etherscanLink = "https://goerli.etherscan.io/tx"
+// const etherscanLink = "https://eth-goerli.blockscout.com/tx"
+const etherscanLink = "https://goerli.etherscan.io/tx"
 let walletAddress;
 let usdcAbi;
 let swapAbi;
@@ -55,10 +55,22 @@ async function connect() {
             await switchNetwork();
         }
 
-        await onSourceTokenChange(document.querySelector("#select-source-token").value)
-        await onDestTokenChange(document.querySelector("#select-dest-token").value)
+        loadBalance();
     } else {
         alert("No wallet");
+    }
+}
+
+const loadBalance = async () => {
+    let swapBtnElement = document.querySelector("#swap-btn")
+    swapBtnElement.disabled = true
+    await Promise.all([
+        onSourceTokenChange(document.querySelector("#select-source-token").value),
+        onDestTokenChange(document.querySelector("#select-dest-token").value)
+    ])
+
+    if (swapBtnElement.disabled) {
+        swapBtnElement.disabled = false
     }
 }
 
@@ -85,6 +97,9 @@ async function switchNetwork() {
 }
 
 const getBalance = async (token) => {
+    if (!walletAddress) {
+        return ""
+    }
     if (token.native) {
         balance = await window.web3.eth.getBalance(walletAddress);
         return window.web3.utils.fromWei(balance)
@@ -120,8 +135,7 @@ const switchTokens = async () => {
 
     sourceTokenElement.value = destTokenValue
     destTokenElement.value = sourceTokenValue
-    await onSourceTokenChange(sourceTokenElement.value)
-    await onDestTokenChange(destTokenElement.value)
+    loadBalance()
 }
 
 const inputMaxAmount = async () => {
