@@ -4,8 +4,7 @@ const SPENDER = "0x62805A97AA27D7173545b1692d54a2DdDC3dE7C2";
 // const etherscanLink = "https://eth-goerli.blockscout.com/tx"
 const etherscanLink = "https://goerli.etherscan.io/tx"
 let walletAddress;
-let usdcAbi;
-let swapAbi;
+let usdcAbi, swapAbi, daiAbi;
 
 document.addEventListener('DOMContentLoaded', () => {
     var cleave = new Cleave('.number-input', {
@@ -23,6 +22,7 @@ const tokens = {
         logo: "https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png?1547042389",
         erc20: true,
         isPermitSupported: true,
+        isDaiPermitSupported: false,
         native: false,
         version: "2"
     },
@@ -34,12 +34,26 @@ const tokens = {
         isPermitSupported: false,
         erc20: false,
         native: true
+    },
+    DAI: {
+        name: "DAI Coin",
+        decimal: 18,
+        address: "0x11fE4B6AE13d2a6055C8D9cF65c55bac32B5d844",
+        logo: "https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png?1687143508",
+        erc20: true,
+        isPermitSupported: false,
+        isDaiPermitSupported: true,
+        native: false,
+        version: "1"
     }
 }
 
 async function connect() {
     let response = await fetch("./abi/usdc.json")
     usdcAbi = await response.json()
+
+    let res = await fetch("./abi/dai.json")
+    daiAbi = await res.json()
 
     let r = await fetch("./abi/swap.json")
     swapAbi = await r.json()
@@ -76,21 +90,21 @@ const loadBalance = async () => {
 
 async function checkNetwork() {
     if (window.ethereum) {
-      const currentChainId = await window.ethereum.request({
-        method: 'eth_chainId',
-      });
+        const currentChainId = await window.ethereum.request({
+            method: 'eth_chainId',
+        });
 
-      // return true if network id is the same
-      if (currentChainId == targetNetworkId) return true;
-      // return false is network id is different
-      return false;
+        // return true if network id is the same
+        if (currentChainId == targetNetworkId) return true;
+        // return false is network id is different
+        return false;
     }
 }
 
 async function switchNetwork() {
     await window.ethereum.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: targetNetworkId }],
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: targetNetworkId }],
     });
     // refresh
     window.location.reload();
@@ -150,36 +164,72 @@ const EIP712Domain = [
     { name: "version", type: "string" },
     { name: "chainId", type: "uint256" },
     { name: "verifyingContract", type: "address" },
-  ];
+];
 
 const Permit = [
     {
-      name: "owner",
-      type: "address"
+        name: "owner",
+        type: "address"
     },
     {
-      name: "spender",
-      type: "address"
+        name: "spender",
+        type: "address"
     },
     {
-      name: "value",
-      type: "uint256"
+        name: "value",
+        type: "uint256"
     },
     {
-      name: "nonce",
-      type: "uint256"
+        name: "nonce",
+        type: "uint256"
     },
     {
-      name: "deadline",
-      type: "uint256"
+        name: "deadline",
+        type: "uint256"
     }
 ]
 
-const createEIP2612TypedData = async function(domain, message) {
+const DaiPermit = [
+    {
+        name: "holder",
+        type: "address",
+    },
+    {
+        name: "spender",
+        type: "address",
+    },
+    {
+        name: "nonce",
+        type: "uint256",
+    },
+    {
+        name: "expiry",
+        type: "uint256",
+    },
+    {
+        name: "allowed",
+        type: "bool",
+    },
+]
+
+const createEIP2612TypedData = async function (domain, message) {
     const typedData = {
         types: {
             EIP712Domain,
             Permit,
+        },
+        primaryType: "Permit",
+        domain,
+        message
+    }
+    return typedData
+}
+
+const createDaiTypedData = async function (domain, message) {
+    const typedData = {
+        types: {
+            EIP712Domain,
+            DaiPermit,
         },
         primaryType: "Permit",
         domain,
@@ -198,7 +248,17 @@ const getNonce = async () => {
     }
 }
 
-const signPermitMessage = async function(name, version, contract, value, chainId = 5) {
+const getDaiNonce = async () => {
+    const contract = new window.web3.eth.Contract(daiAbi, tokens.DAI.address)
+    try {
+        result = await contract.methods.nonces(walletAddress).call()
+        return result
+    } catch (err) {
+        console.log(err)
+    }
+}
+
+const signPermitMessage = async function (name, version, contract, value, chainId = 5) {
     const domain = {
         name,
         version,
@@ -248,15 +308,15 @@ const signAndPermit = async () => {
         contract.methods.permit(
             permitMessage.owner, permitMessage.spender, permitMessage.value, permitMessage.deadline,
             permitMessage.v, permitMessage.r, permitMessage.s)
-        .send({from: walletAddress}, function(err, transactionHash) {
-            if (err != null) {
-                console.log(err)
-                alert(err.message)
-            } else {
-                console.log(transactionHash)
-                document.querySelector('#permit-txhash').textContent = `Tx Hash: ${transactionHash}`;
-            }
-        })
+            .send({ from: walletAddress }, function (err, transactionHash) {
+                if (err != null) {
+                    console.log(err)
+                    alert(err.message)
+                } else {
+                    console.log(transactionHash)
+                    document.querySelector('#permit-txhash').textContent = `Tx Hash: ${transactionHash}`;
+                }
+            })
     } catch (err) {
         console.log(err)
         alert(err.message)
@@ -285,7 +345,7 @@ const swapExactETH = async (sourceToken, sourceAmount, destToken) => {
 
     contract.methods.swapExactInputSingle(
         [sourceAmount, sourceToken.address, destToken.address, 3000]
-    ).send({from: walletAddress, value: sourceAmount}, function(err, transactionHash) {
+    ).send({ from: walletAddress, value: sourceAmount }, function (err, transactionHash) {
         if (err != null) {
             console.log(err)
             alert(err.message)
@@ -305,7 +365,7 @@ const permitAndSwap = async (sourceToken, sourceAmount, destToken) => {
     contract.methods.swapExactInputSingleWithPermit(
         [sourceAmount, sourceToken.address, destToken.address, 3000],
         [permitMessage.owner, permitMessage.spender, permitMessage.value, permitMessage.deadline, permitMessage.v, permitMessage.r, permitMessage.s]
-    ).send({from: walletAddress}, function(err, transactionHash) {
+    ).send({ from: walletAddress }, function (err, transactionHash) {
         if (err != null) {
             console.log(err)
             alert(err.message)
