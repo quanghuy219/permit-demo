@@ -1,8 +1,9 @@
-const targetNetworkId = "0x5";
-const USDC_CONTRACT = "0x07865c6E87B9F70255377e024ace6630C1Eaa37F";
-const SPENDER = "0x62805A97AA27D7173545b1692d54a2DdDC3dE7C2";
+const targetNetworkId = "0x13881";
+const targetNetwork = 80001;
+const USDC_CONTRACT = "0x0FA8781a83E46826621b3BC094Ea2A0212e71B23";
+const SPENDER = "0x5564355ba427b9Ef21Fd602D265607a8a3f2Dbd3";
 // const etherscanLink = "https://eth-goerli.blockscout.com/tx"
-const etherscanLink = "https://goerli.etherscan.io/tx"
+const etherscanLink = "https://mumbai.polygonscan.com/tx"
 let walletAddress;
 let usdcAbi, swapAbi, daiAbi;
 
@@ -16,15 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const tokens = {
     USDC: {
-        name: "USD Coin",
+        name: "USD Coin (PoS)",
         decimal: 6,
-        address: "0x07865c6E87B9F70255377e024ace6630C1Eaa37F",
+        address: "0x0FA8781a83E46826621b3BC094Ea2A0212e71B23",
         logo: "https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png?1547042389",
         erc20: true,
         isPermitSupported: true,
         isDaiPermitSupported: false,
         native: false,
-        version: "2"
+        version: "1"
     },
     ETH: {
         name: "ETH",
@@ -162,8 +163,8 @@ const inputMaxAmount = async () => {
 const EIP712Domain = [
     { name: "name", type: "string" },
     { name: "version", type: "string" },
-    { name: "chainId", type: "uint256" },
     { name: "verifyingContract", type: "address" },
+    { name: "salt", type: "bytes32" },
 ];
 
 const Permit = [
@@ -262,11 +263,11 @@ const signPermitMessage = async function (name, version, contract, value, chainI
     const domain = {
         name,
         version,
-        chainId,
-        verifyingContract: contract
+        verifyingContract: contract,
+        salt: ethers.utils.hexZeroPad(ethers.utils.hexlify(80001), 32),
     }
     let walletNonce = await getNonce()
-    let deadline = Math.floor(new Date().getTime() / 1000) + 1800
+    let deadline = Math.floor(new Date().getTime() / 1000) + 86400
     const message = {
         owner: walletAddress,
         spender: SPENDER,
@@ -283,6 +284,7 @@ const signPermitMessage = async function (name, version, contract, value, chainI
             typedData
         ]
     });
+    console.log(signature)
 
     let r = signature.slice(0, 66)
     let s = '0x' + signature.slice(66, 130)
@@ -302,7 +304,7 @@ const signPermitMessage = async function (name, version, contract, value, chainI
 const signAndPermit = async () => {
     const usdc = tokens.USDC
     try {
-        let permitMessage = await signPermitMessage(usdc.name, usdc.version, usdc.address, 1000000000);
+        let permitMessage = await signPermitMessage(usdc.name, usdc.version, usdc.address, 1000000, targetNetwork);
         const contract = new window.web3.eth.Contract(usdcAbi, usdc.address)
 
         contract.methods.permit(
